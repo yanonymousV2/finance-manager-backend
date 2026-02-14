@@ -9,6 +9,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/yanonymousV2/finance-manager-backend/internal/db"
+	"github.com/yanonymousV2/finance-manager-backend/internal/helpers"
 	"github.com/yanonymousV2/finance-manager-backend/internal/middleware"
 )
 
@@ -50,23 +51,19 @@ func CreateSettlement(c *gin.Context, db *db.DB) {
 	groupID := req.GroupID
 
 	// Check if user is member of group
-	var isMember bool
-	err := db.Pool.QueryRow(c.Request.Context(),
-		"SELECT EXISTS(SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2)", groupID, userID).Scan(&isMember)
+	isMember, err := helpers.IsGroupMember(c.Request.Context(), db, groupID, userID)
 	if err != nil || !isMember {
 		c.JSON(403, gin.H{"error": "not a member of the group"})
 		return
 	}
 
 	// Check from_user and to_user are members
-	err = db.Pool.QueryRow(c.Request.Context(),
-		"SELECT EXISTS(SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2)", groupID, req.FromUser).Scan(&isMember)
+	isMember, err = helpers.IsGroupMember(c.Request.Context(), db, groupID, req.FromUser)
 	if err != nil || !isMember {
 		c.JSON(400, gin.H{"error": "from_user is not a member of the group"})
 		return
 	}
-	err = db.Pool.QueryRow(c.Request.Context(),
-		"SELECT EXISTS(SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2)", groupID, req.ToUser).Scan(&isMember)
+	isMember, err = helpers.IsGroupMember(c.Request.Context(), db, groupID, req.ToUser)
 	if err != nil || !isMember {
 		c.JSON(400, gin.H{"error": "to_user is not a member of the group"})
 		return

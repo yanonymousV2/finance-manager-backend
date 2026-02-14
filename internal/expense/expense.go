@@ -1,6 +1,7 @@
 package expense
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -9,6 +10,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/yanonymousV2/finance-manager-backend/internal/db"
+	"github.com/yanonymousV2/finance-manager-backend/internal/helpers"
 	"github.com/yanonymousV2/finance-manager-backend/internal/middleware"
 )
 
@@ -31,13 +33,13 @@ type ExpenseSplit struct {
 type CreateExpenseRequest struct {
 	GroupID     uuid.UUID                   `json:"group_id" validate:"required"`
 	Description string                      `json:"description" validate:"required"`
-	TotalAmount decimal.Decimal             `json:"total_amount" validate:"required,gt=0"`
+	TotalAmount string                      `json:"total_amount" validate:"required,numeric"`
 	Splits      []CreateExpenseSplitRequest `json:"splits" validate:"required,min=1,dive"`
 }
 
 type CreateExpenseSplitRequest struct {
-	UserID uuid.UUID       `json:"user_id" validate:"required"`
-	Amount decimal.Decimal `json:"amount" validate:"required,gte=0"`
+	UserID uuid.UUID `json:"user_id" validate:"required"`
+	Amount string    `json:"amount" validate:"required,numeric"`
 }
 
 func CreateExpense(c *gin.Context, db *db.DB) {
@@ -59,12 +61,22 @@ func CreateExpense(c *gin.Context, db *db.DB) {
 		return
 	}
 
+	// Parse total amount
+	totalAmount, err := decimal.NewFromString(req.TotalAmount)
+	if err != nil {
+		c.JSON(400, gin.H{"error": "invalid total amount format"})
+		return
+	}
+
+	if totalAmount.LessThanOrEqual(decimal.Zero) {
+		c.JSON(400, gin.H{"error": "total amount must be greater than 0"})
+		return
+	}
+
 	groupID := req.GroupID
 
 	// Check if user is member of group
-	var isMember bool
-	err := db.Pool.QueryRow(c.Request.Context(),
-		"SELECT EXISTS(SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2)", groupID, userID).Scan(&isMember)
+	isMember, err := helpers.IsGroupMember(c.Request.Context(), db, groupID, userID)
 	if err != nil || !isMember {
 		c.JSON(403, gin.H{"error": "not a member of the group"})
 		return
@@ -73,24 +85,43 @@ func CreateExpense(c *gin.Context, db *db.DB) {
 	// Validate splits: all users are members, sum == total
 	splitSum := decimal.Zero
 	userIDs := make(map[uuid.UUID]bool)
-	for _, split := range req.Splits {
+	parsedSplits := make([]struct {
+		UserID uuid.UUID
+		Amount decimal.Decimal
+	}, len(req.Splits))
+
+	for i, split := range req.Splits {
 		if userIDs[split.UserID] {
 			c.JSON(400, gin.H{"error": "duplicate user in splits"})
 			return
 		}
 		userIDs[split.UserID] = true
-		splitSum = splitSum.Add(split.Amount)
+
+		// Parse split amount
+		amount, err := decimal.NewFromString(split.Amount)
+		if err != nil {
+			c.JSON(400, gin.H{"error": "invalid split amount format"})
+			return
+		}
+
+		if amount.LessThan(decimal.Zero) {
+			c.JSON(400, gin.H{"error": "split amount cannot be negative"})
+			return
+		}
+
+		parsedSplits[i].UserID = split.UserID
+		parsedSplits[i].Amount = amount
+		splitSum = splitSum.Add(amount)
 	}
 
-	if !splitSum.Equal(req.TotalAmount) {
+	if !splitSum.Equal(totalAmount) {
 		c.JSON(400, gin.H{"error": "splits sum does not match total amount"})
 		return
 	}
 
 	// Check all users are members
 	for uid := range userIDs {
-		err = db.Pool.QueryRow(c.Request.Context(),
-			"SELECT EXISTS(SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2)", groupID, uid).Scan(&isMember)
+		isMember, err = helpers.IsGroupMember(c.Request.Context(), db, groupID, uid)
 		if err != nil || !isMember {
 			c.JSON(400, gin.H{"error": "all split users must be group members"})
 			return
@@ -109,14 +140,14 @@ func CreateExpense(c *gin.Context, db *db.DB) {
 	var exp Expense
 	err = tx.QueryRow(c.Request.Context(),
 		"INSERT INTO expenses (group_id, description, total_amount, paid_by) VALUES ($1, $2, $3, $4) RETURNING id, group_id, description, total_amount, paid_by, created_at",
-		groupID, req.Description, req.TotalAmount, userID).Scan(&exp.ID, &exp.GroupID, &exp.Description, &exp.TotalAmount, &exp.PaidBy, &exp.CreatedAt)
+		groupID, req.Description, totalAmount, userID).Scan(&exp.ID, &exp.GroupID, &exp.Description, &exp.TotalAmount, &exp.PaidBy, &exp.CreatedAt)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "failed to create expense"})
 		return
 	}
 
 	// Insert splits
-	for _, split := range req.Splits {
+	for _, split := range parsedSplits {
 		_, err = tx.Exec(c.Request.Context(),
 			"INSERT INTO expense_splits (expense_id, user_id, amount) VALUES ($1, $2, $3)",
 			exp.ID, split.UserID, split.Amount)
@@ -133,8 +164,8 @@ func CreateExpense(c *gin.Context, db *db.DB) {
 	}
 
 	// Load splits for response
-	exp.Splits = make([]ExpenseSplit, len(req.Splits))
-	for i, split := range req.Splits {
+	exp.Splits = make([]ExpenseSplit, len(parsedSplits))
+	for i, split := range parsedSplits {
 		exp.Splits[i] = ExpenseSplit{
 			ExpenseID: exp.ID,
 			UserID:    split.UserID,
@@ -160,18 +191,31 @@ func GetGroupExpenses(c *gin.Context, db *db.DB) {
 	}
 
 	// Check if user is member of group
-	var isMember bool
-	err = db.Pool.QueryRow(c.Request.Context(),
-		"SELECT EXISTS(SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2)", groupID, userID).Scan(&isMember)
+	isMember, err := helpers.IsGroupMember(c.Request.Context(), db, groupID, userID)
 	if err != nil || !isMember {
 		c.JSON(403, gin.H{"error": "not a member of the group"})
 		return
 	}
 
-	// Get expenses
+	// Parse pagination parameters
+	limit := 50 // default
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+
+	offset := 0
+	if offsetStr := c.Query("offset"); offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
+			offset = o
+		}
+	}
+
+	// Get expenses with pagination
 	rows, err := db.Pool.Query(c.Request.Context(),
-		"SELECT id, group_id, description, total_amount, paid_by, created_at FROM expenses WHERE group_id = $1 ORDER BY created_at DESC",
-		groupID)
+		"SELECT id, group_id, description, total_amount, paid_by, created_at FROM expenses WHERE group_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+		groupID, limit, offset)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "failed to get expenses"})
 		return
@@ -188,5 +232,21 @@ func GetGroupExpenses(c *gin.Context, db *db.DB) {
 		expenses = append(expenses, exp)
 	}
 
-	c.JSON(200, expenses)
+	// Get total count for pagination metadata
+	var totalCount int
+	err = db.Pool.QueryRow(c.Request.Context(),
+		"SELECT COUNT(*) FROM expenses WHERE group_id = $1", groupID).Scan(&totalCount)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "failed to get total count"})
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"expenses": expenses,
+		"pagination": gin.H{
+			"limit":  limit,
+			"offset": offset,
+			"total":  totalCount,
+		},
+	})
 }

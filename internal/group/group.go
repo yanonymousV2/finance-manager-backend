@@ -9,6 +9,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/yanonymousV2/finance-manager-backend/internal/db"
+	"github.com/yanonymousV2/finance-manager-backend/internal/helpers"
 	"github.com/yanonymousV2/finance-manager-backend/internal/middleware"
 )
 
@@ -51,12 +52,34 @@ func CreateGroup(c *gin.Context, db *db.DB) {
 		return
 	}
 
+	// Start transaction to create group and add creator as member
+	tx, err := db.Pool.Begin(c.Request.Context())
+	if err != nil {
+		c.JSON(500, gin.H{"error": "failed to start transaction"})
+		return
+	}
+	defer tx.Rollback(c.Request.Context())
+
 	var g Group
-	err := db.Pool.QueryRow(c.Request.Context(),
+	err = tx.QueryRow(c.Request.Context(),
 		"INSERT INTO groups (name, created_by) VALUES ($1, $2) RETURNING id, name, created_by, created_at",
 		req.Name, userID).Scan(&g.ID, &g.Name, &g.CreatedBy, &g.CreatedAt)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "failed to create group"})
+		return
+	}
+
+	// Add creator as member
+	_, err = tx.Exec(c.Request.Context(),
+		"INSERT INTO group_members (group_id, user_id) VALUES ($1, $2)",
+		g.ID, userID)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "failed to add creator as member"})
+		return
+	}
+
+	if err := tx.Commit(c.Request.Context()); err != nil {
+		c.JSON(500, gin.H{"error": "failed to commit transaction"})
 		return
 	}
 
@@ -99,17 +122,14 @@ func AddMember(c *gin.Context, db *db.DB) {
 	}
 
 	// Check if user exists
-	var exists bool
-	err = db.Pool.QueryRow(c.Request.Context(),
-		"SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)", req.UserID).Scan(&exists)
+	exists, err := helpers.UserExists(c.Request.Context(), db, req.UserID)
 	if err != nil || !exists {
 		c.JSON(400, gin.H{"error": "user does not exist"})
 		return
 	}
 
 	// Check if already member
-	err = db.Pool.QueryRow(c.Request.Context(),
-		"SELECT EXISTS(SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2)", groupID, req.UserID).Scan(&exists)
+	exists, err = helpers.IsGroupMember(c.Request.Context(), db, groupID, req.UserID)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "database error"})
 		return
@@ -145,9 +165,7 @@ func GetBalances(c *gin.Context, db *db.DB) {
 	}
 
 	// Check if user is member of group
-	var isMember bool
-	err = db.Pool.QueryRow(c.Request.Context(),
-		"SELECT EXISTS(SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2)", groupID, userID).Scan(&isMember)
+	isMember, err := helpers.IsGroupMember(c.Request.Context(), db, groupID, userID)
 	if err != nil || !isMember {
 		c.JSON(403, gin.H{"error": "not a member of the group"})
 		return

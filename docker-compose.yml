@@ -26,7 +26,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/finance_manager?sslmode=disable"
-      JWT_SECRET: "your-secure-secret-key-change-this"
+      JWT_SECRET: "c7cceee3947ba54a1d67b8e1996dd136a1ae3cbcf1c9e7b8e5a9d8e4f"
       PORT: "8080"
     ports:
       - "8080:8080"

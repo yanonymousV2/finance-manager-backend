@@ -4,73 +4,77 @@ A Go-based expense splitting and settlement application for managing group finan
 
 ## Features
 
-- **Authentication**: JWT-based signup and login
-- **Groups**: Create groups and manage members
-- **Expenses**: Track expenses with split calculations
+- **Authentication**: JWT-based signup and login with rate limiting
+- **Groups**: Create groups and manage members (creator auto-added)
+- **Expenses**: Track expenses with split calculations and pagination
 - **Balances**: Auto-derived balances from transactions
 - **Settlements**: Record payment settlements between users
-- **ACID Compliance**: Transactional expense operations
+- **Personal Finance - Budgeting**: Set monthly budgets and track spending limits
+- **Personal Finance - Categories**: Organize expenses with custom categories (name, color, icon)
+- **Personal Finance - Expense Tracking**: Record personal expenses with date/time, descriptions, and notes
+- **Personal Finance - Dashboard**: Monthly overview with spending analytics, daily averages, and projections
+- **Security**: CORS protection, rate limiting, and secure JWT configuration
+- **Observability**: Request logging and health checks
+- **Graceful Shutdown**: Proper signal handling for clean shutdowns
 
 ## Prerequisites
 
 - Go 1.24.2+
-- PostgreSQL 12+
-- macOS/Linux/Windows
+- Docker and Docker Compose
 
 ## Setup
 
-### 1. Install PostgreSQL
+### Using Docker (Recommended)
+
+1. Clone the repository
+2. Run `docker-compose up --build`
+3. The application will be available at `http://localhost:8080`
+
+The database migrations run automatically on startup.
+
+### Local Development
+
+If you prefer running PostgreSQL locally:
 
 **macOS** (using Homebrew):
 ```bash
 brew install postgresql@15
 brew services start postgresql@15
+createdb finance_manager
 ```
 
 **Linux** (Ubuntu/Debian):
 ```bash
 sudo apt-get install postgresql postgresql-contrib
 sudo systemctl start postgresql
+sudo -u postgres createdb finance_manager
 ```
 
-### 2. Create Database
-
+**IMPORTANT**: Set environment variables:
 ```bash
-createdb finance_manager
-
-# Or connect to PostgreSQL and run:
-# CREATE DATABASE finance_manager;
-```
-
-### 3. Configure Environment
-
-Create a `.env` file (or set environment variables):
-
-```bash
-export DATABASE_URL="postgres://localhost/finance_manager?sslmode=disable"
-export JWT_SECRET="your-secure-secret-key-change-this"
+export DATABASE_URL="postgres://postgres@localhost/finance_manager?sslmode=disable"
+export JWT_SECRET="your-secret-must-be-at-least-32-characters-long-for-security"
 export PORT="8080"
 ```
 
-**Default values** (if not set):
-- `DATABASE_URL`: `postgres://user:password@localhost:5432/finance_manager?sslmode=disable`
-- `JWT_SECRET`: `your-secret-key`
-- `PORT`: `8080`
+**Note**: The JWT_SECRET must be at least 32 characters long. The application will fail to start if this requirement is not met.
 
-### 4. Run the Application
-
+Run the application:
 ```bash
-./finance-manager
+go run ./cmd/main.go
 ```
 
-The server will:
-1. Connect to PostgreSQL
-2. Run database migrations automatically
-3. Start on configured port (default: 8080)
+## Health Check
 
-**Output:**
-```
-Server starting on port 8080
+Check application and database health:
+```bash
+GET /health
+
+Response:
+{
+  "status": "healthy",
+  "database": "connected"
+}
 ```
 
 ## API Endpoints
@@ -186,10 +190,31 @@ Response:
 
 #### Get Group Expenses
 ```bash
-GET /groups/:id/expenses
+GET /groups/:id/expenses?limit=50&offset=0
 Authorization: Bearer <token>
 
-Response: Array of expenses
+Query Parameters:
+- limit: Number of expenses to return (default: 50, max: 100)
+- offset: Number of expenses to skip for pagination (default: 0)
+
+Response:
+{
+  "expenses": [
+    {
+      "id": "850e8400-e29b-41d4-a716-446655440000",
+      "group_id": "650e8400-e29b-41d4-a716-446655440000",
+      "description": "Dinner",
+      "total_amount": "100.00",
+      "paid_by": "550e8400-e29b-41d4-a716-446655440000",
+      "created_at": "2025-01-26T12:00:00Z"
+    }
+  ],
+  "pagination": {
+    "limit": 50,
+    "offset": 0,
+    "total": 150
+  }
+}
 ```
 
 ### Balances
@@ -203,11 +228,11 @@ Response:
 [
   {
     "user_id": "550e8400-e29b-41d4-a716-446655440000",
-    "amount": "-25.50"  # Negative = is owed, Positive = owes
+    "amount": "25.50"  // Positive = user is owed money
   },
   {
     "user_id": "750e8400-e29b-41d4-a716-446655440000",
-    "amount": "25.50"   # Owes 25.50
+    "amount": "-25.50"   // Negative = user owes money
   }
 ]
 ```
@@ -237,6 +262,279 @@ Response:
   "created_at": "2025-01-26T12:00:00Z"
 }
 ```
+
+## Personal Finance
+
+### Budget Management
+
+#### Set Monthly Budget
+```bash
+POST /budget
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "amount": "3000.00",
+  "month": 2,
+  "year": 2026
+}
+
+Response:
+{
+  "id": "a50e8400-e29b-41d4-a716-446655440000",
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "amount": "3000.00",
+  "month": 2,
+  "year": 2026,
+  "created_at": "2026-02-14T12:00:00Z",
+  "updated_at": "2026-02-14T12:00:00Z"
+}
+```
+
+#### Get Monthly Budget
+```bash
+GET /budget?month=2&year=2026
+Authorization: Bearer <token>
+
+# Defaults to current month if parameters not provided
+GET /budget
+
+Response:
+{
+  "id": "a50e8400-e29b-41d4-a716-446655440000",
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "amount": "3000.00",
+  "month": 2,
+  "year": 2026,
+  "created_at": "2026-02-14T12:00:00Z",
+  "updated_at": "2026-02-14T12:00:00Z"
+}
+```
+
+#### List All Budgets
+```bash
+GET /budgets
+Authorization: Bearer <token>
+
+Response: Array of budget objects ordered by year and month (descending)
+```
+
+### Category Management
+
+#### Create Category
+```bash
+POST /categories
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "Groceries",
+  "color": "#4CAF50",
+  "icon": "shopping_cart"
+}
+
+Response:
+{
+  "id": "b50e8400-e29b-41d4-a716-446655440000",
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Groceries",
+  "color": "#4CAF50",
+  "icon": "shopping_cart",
+  "created_at": "2026-02-14T12:00:00Z"
+}
+```
+
+#### List Categories
+```bash
+GET /categories
+Authorization: Bearer <token>
+
+Response: Array of category objects ordered by name
+```
+
+#### Update Category
+```bash
+PUT /categories/:id
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "Food & Groceries",
+  "color": "#66BB6A"
+}
+
+Response: Updated category object
+```
+
+#### Delete Category
+```bash
+DELETE /categories/:id
+Authorization: Bearer <token>
+
+Response:
+{
+  "message": "category deleted successfully"
+}
+```
+
+### Personal Expense Management
+
+#### Create Personal Expense
+```bash
+POST /personal-expenses
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "category_id": "b50e8400-e29b-41d4-a716-446655440000",
+  "amount": "45.50",
+  "description": "Weekly grocery shopping",
+  "notes": "Bought vegetables and fruits",
+  "expense_date": "2026-02-14T10:30:00Z"
+}
+
+# Description and notes are optional
+# Category can be null for uncategorized expenses
+
+Response:
+{
+  "id": "c50e8400-e29b-41d4-a716-446655440000",
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "category_id": "b50e8400-e29b-41d4-a716-446655440000",
+  "amount": "45.50",
+  "description": "Weekly grocery shopping",
+  "notes": "Bought vegetables and fruits",
+  "expense_date": "2026-02-14T10:30:00Z",
+  "created_at": "2026-02-14T12:00:00Z",
+  "updated_at": "2026-02-14T12:00:00Z"
+}
+```
+
+#### List Personal Expenses
+```bash
+GET /personal-expenses?limit=50&offset=0&category_id=xxx&start_date=2026-02-01&end_date=2026-02-28
+Authorization: Bearer <token>
+
+Query Parameters:
+- limit: Number of expenses to return (default: 50, max: 100)
+- offset: Number of expenses to skip for pagination
+- category_id: Filter by category UUID
+- start_date: Filter expenses from this date (YYYY-MM-DD)
+- end_date: Filter expenses up to this date (YYYY-MM-DD)
+
+Response:
+{
+  "expenses": [
+    {
+      "id": "c50e8400-e29b-41d4-a716-446655440000",
+      "user_id": "550e8400-e29b-41d4-a716-446655440000",
+      "category_id": "b50e8400-e29b-41d4-a716-446655440000",
+      "amount": "45.50",
+      "description": "Weekly grocery shopping",
+      "notes": "Bought vegetables and fruits",
+      "expense_date": "2026-02-14T10:30:00Z",
+      "created_at": "2026-02-14T12:00:00Z",
+      "updated_at": "2026-02-14T12:00:00Z"
+    }
+  ],
+  "pagination": {
+    "limit": 50,
+    "offset": 0,
+    "total": 150
+  }
+}
+```
+
+#### Get Single Expense
+```bash
+GET /personal-expenses/:id
+Authorization: Bearer <token>
+
+Response: Single expense object
+```
+
+#### Update Personal Expense
+```bash
+PUT /personal-expenses/:id
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "amount": "50.00",
+  "notes": "Updated amount after reviewing receipt"
+}
+
+# All fields are optional - only provide fields to update
+
+Response: Updated expense object
+```
+
+#### Delete Personal Expense
+```bash
+DELETE /personal-expenses/:id
+Authorization: Bearer <token>
+
+Response:
+{
+  "message": "expense deleted successfully"
+}
+```
+
+### Monthly Dashboard
+
+#### Get Monthly Dashboard
+```bash
+GET /dashboard/monthly?month=2&year=2026
+Authorization: Bearer <token>
+
+# Defaults to current month if parameters not provided
+GET /dashboard/monthly
+
+Response:
+{
+  "month": 2,
+  "year": 2026,
+  "budget": "3000.00",
+  "total_spent": "1250.75",
+  "remaining_budget": "1749.25",
+  "days_in_month": 28,
+  "days_elapsed": 14,
+  "days_remaining": 14,
+  "daily_average_spent": "89.34",
+  "projected_spending": "2501.52",
+  "is_over_budget": false,
+  "expense_count": 45,
+  "category_breakdown": [
+    {
+      "category_id": "b50e8400-e29b-41d4-a716-446655440000",
+      "category_name": "Groceries",
+      "total_amount": "450.50",
+      "expense_count": 12
+    },
+    {
+      "category_id": "c60e8400-e29b-41d4-a716-446655440000",
+      "category_name": "Transportation",
+      "total_amount": "320.25",
+      "expense_count": 18
+    },
+    {
+      "category_id": null,
+      "category_name": null,
+      "total_amount": "480.00",
+      "expense_count": 15
+    }
+  ]
+}
+```
+
+**Dashboard Features:**
+- Shows current month's budget and spending
+- Calculates remaining budget (positive if under budget, negative if over)
+- Tracks days elapsed and remaining in the month
+- Computes daily average spending
+- Projects total month spending based on current rate
+- Breaks down spending by category
+- Includes uncategorized expenses (null category)
 
 ## Database Schema
 
@@ -280,6 +578,36 @@ Response:
 - `amount` (DECIMAL): Settlement amount
 - `created_at` (TIMESTAMP): Creation time
 
+### expense_categories
+- `id` (UUID): Primary key
+- `user_id` (UUID): Foreign key
+- `name` (VARCHAR): Category name
+- `color` (VARCHAR): Hex color code
+- `icon` (VARCHAR): Icon identifier
+- `created_at` (TIMESTAMP): Creation time
+- Unique constraint: (user_id, name)
+
+### monthly_budgets
+- `id` (UUID): Primary key
+- `user_id` (UUID): Foreign key
+- `amount` (DECIMAL): Budget amount
+- `month` (INTEGER): Month (1-12)
+- `year` (INTEGER): Year
+- `created_at` (TIMESTAMP): Creation time
+- `updated_at` (TIMESTAMP): Last update time
+- Unique constraint: (user_id, month, year)
+
+### personal_expenses
+- `id` (UUID): Primary key
+- `user_id` (UUID): Foreign key
+- `category_id` (UUID): Foreign key (nullable)
+- `amount` (DECIMAL): Expense amount
+- `description` (VARCHAR): Optional description
+- `notes` (TEXT): Optional notes
+- `expense_date` (TIMESTAMP): Date and time of expense
+- `created_at` (TIMESTAMP): Creation time
+- `updated_at` (TIMESTAMP): Last update time
+
 ## Testing with cURL
 
 ### 1. Signup
@@ -304,6 +632,21 @@ curl -X POST http://localhost:8080/groups \
   -H "Content-Type: application/json" \
   -d '{"name":"Trip"}'
 ```
+
+## Testing with Postman
+
+Import the `Finance_Manager_Backend.postman_collection.json` file into Postman. The collection includes:
+
+- Pre-configured requests for all API endpoints
+- Environment variables for `base_url` and `token`
+- Automatic token saving after successful login/signup
+- Example request bodies with proper JSON formatting
+
+**Quick Start:**
+1. Import the collection
+2. Set `base_url` variable to your server URL (default: `http://localhost:8080`)
+3. Run Signup or Login to get a token
+4. Use the token for authenticated requests
 
 ## Development
 
@@ -331,42 +674,22 @@ go test ./...
 │   └── main.go              # Application entry point
 ├── internal/
 │   ├── auth/                # Authentication & JWT
+│   ├── budget/              # Personal finance budgeting
+│   ├── category/            # Expense categories
 │   ├── config/              # Configuration
+│   ├── dashboard/           # Monthly dashboard analytics
 │   ├── db/                  # Database & migrations
-│   ├── middleware/          # JWT middleware
-│   ├── user/                # User models
+│   ├── expense/             # Group expense operations
 │   ├── group/               # Group operations
-│   ├── expense/             # Expense operations
-│   └── settlement/          # Settlement operations
+│   ├── helpers/             # Helper functions (DB utilities)
+│   ├── middleware/          # JWT, CORS, rate limiting, logging
+│   ├── personalexpense/     # Personal expense tracking
+│   ├── settlement/          # Settlement operations
+│   └── user/                # User models
 ├── pkg/
 │   └── utils/               # Utility functions
 └── go.mod                   # Dependencies
 ```
-
-## Key Implementation Details
-
-### ACID Compliance
-- Expenses use database transactions
-- Automatic rollback on validation failure
-- Ensures data consistency
-
-### Balance Calculation
-- Derived from expenses and settlements
-- Not stored (prevents corruption)
-- Calculated on-demand for accuracy
-
-### Security
-- Passwords hashed with bcrypt
-- JWTs expire after 24 hours
-- UUID primary keys (not sequential)
-- Parameterized SQL queries (no injection)
-
-### Validation
-- Strict input validation
-- Email format verification
-- UUID validation
-- Split sum validation
-- Group membership checks
 
 ## Troubleshooting
 
@@ -402,12 +725,15 @@ invalid token
 
 ## Future Enhancements
 
-- Settlement suggestions
-- Expense categories
-- Recurring expenses
-- Mobile app
-- Real-time notifications
-- Audit logging
+- Settlement suggestions (automated debt simplification)
+- Recurring expenses (auto-create monthly expenses)
+- Mobile app (iOS & Android)
+- Real-time notifications (WebSocket support)
+- Receipt image upload and OCR
+- Multi-currency support
+- Data export (CSV, PDF reports)
+- Spending insights and trends
+- Budget alerts and notifications
 
 ## License
 

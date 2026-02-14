@@ -1,0 +1,642 @@
+{
+  "info": {
+    "name": "Finance Manager Backend",
+    "description": "API collection for the Finance Manager backend - a comprehensive expense management application with group expense splitting and personal finance tracking features",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Signup",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"alice@example.com\",\n  \"password\": \"securepassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/signup",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "signup"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('token', response.token);",
+                  "    console.log('Token saved:', response.token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"alice@example.com\",\n  \"password\": \"securepassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('token', response.token);",
+                  "    console.log('Token saved:', response.token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Groups",
+      "item": [
+        {
+          "name": "Create Group",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Weekend Trip\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/groups",
+              "host": ["{{base_url}}"],
+              "path": ["groups"]
+            }
+          }
+        },
+        {
+          "name": "Add Member to Group",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"750e8400-e29b-41d4-a716-446655440000\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/groups/:group_id/add-member",
+              "host": ["{{base_url}}"],
+              "path": ["groups", ":group_id", "add-member"],
+              "variable": [
+                {
+                  "key": "group_id",
+                  "value": "650e8400-e29b-41d4-a716-446655440000"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Group Balances",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/groups/:group_id/balances",
+              "host": ["{{base_url}}"],
+              "path": ["groups", ":group_id", "balances"],
+              "variable": [
+                {
+                  "key": "group_id",
+                  "value": "650e8400-e29b-41d4-a716-446655440000"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Expenses",
+      "item": [
+        {
+          "name": "Create Expense",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"group_id\": \"650e8400-e29b-41d4-a716-446655440000\",\n  \"description\": \"Dinner\",\n  \"total_amount\": \"100.00\",\n  \"splits\": [\n    {\n      \"user_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n      \"amount\": \"50.00\"\n    },\n    {\n      \"user_id\": \"750e8400-e29b-41d4-a716-446655440000\",\n      \"amount\": \"50.00\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/expenses",
+              "host": ["{{base_url}}"],
+              "path": ["expenses"]
+            }
+          }
+        },
+        {
+          "name": "Get Group Expenses",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/groups/:group_id/expenses",
+              "host": ["{{base_url}}"],
+              "path": ["groups", ":group_id", "expenses"],
+              "variable": [
+                {
+                  "key": "group_id",
+                  "value": "650e8400-e29b-41d4-a716-446655440000"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Settlements",
+      "item": [
+        {
+          "name": "Create Settlement",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"group_id\": \"650e8400-e29b-41d4-a716-446655440000\",\n  \"from_user\": \"750e8400-e29b-41d4-a716-446655440000\",\n  \"to_user\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"amount\": \"25.50\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/settlements",
+              "host": ["{{base_url}}"],
+              "path": ["settlements"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Personal Finance - Budget",
+      "item": [
+        {
+          "name": "Set Monthly Budget",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"5000.00\",\n  \"month\": 2,\n  \"year\": 2026\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/budget",
+              "host": ["{{base_url}}"],
+              "path": ["budget"]
+            }
+          }
+        },
+        {
+          "name": "Get Monthly Budget",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/budget?month=2&year=2026",
+              "host": ["{{base_url}}"],
+              "path": ["budget"],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "2",
+                  "description": "Optional: defaults to current month"
+                },
+                {
+                  "key": "year",
+                  "value": "2026",
+                  "description": "Optional: defaults to current year"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List All Budgets",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/budgets",
+              "host": ["{{base_url}}"],
+              "path": ["budgets"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Personal Finance - Categories",
+      "item": [
+        {
+          "name": "Create Category",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Groceries\",\n  \"color\": \"#4CAF50\",\n  \"icon\": \"🛒\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/categories",
+              "host": ["{{base_url}}"],
+              "path": ["categories"]
+            }
+          }
+        },
+        {
+          "name": "List Categories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/categories",
+              "host": ["{{base_url}}"],
+              "path": ["categories"]
+            }
+          }
+        },
+        {
+          "name": "Update Category",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Food & Groceries\",\n  \"color\": \"#66BB6A\",\n  \"icon\": \"🍕\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/categories/:id",
+              "host": ["{{base_url}}"],
+              "path": ["categories", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "550e8400-e29b-41d4-a716-446655440000"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Category",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/categories/:id",
+              "host": ["{{base_url}}"],
+              "path": ["categories", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "550e8400-e29b-41d4-a716-446655440000"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Personal Finance - Expenses",
+      "item": [
+        {
+          "name": "Create Personal Expense",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"amount\": \"85.50\",\n  \"description\": \"Weekly grocery shopping\",\n  \"notes\": \"Bought organic vegetables and fruits\",\n  \"expense_date\": \"2026-02-14T10:30:00Z\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/personal-expenses",
+              "host": ["{{base_url}}"],
+              "path": ["personal-expenses"]
+            }
+          }
+        },
+        {
+          "name": "List Personal Expenses",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/personal-expenses?category_id=550e8400-e29b-41d4-a716-446655440000&start_date=2026-02-01&end_date=2026-02-28&limit=10&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["personal-expenses"],
+              "query": [
+                {
+                  "key": "category_id",
+                  "value": "550e8400-e29b-41d4-a716-446655440000",
+                  "description": "Optional: filter by category"
+                },
+                {
+                  "key": "start_date",
+                  "value": "2026-02-01",
+                  "description": "Optional: filter from date (YYYY-MM-DD)"
+                },
+                {
+                  "key": "end_date",
+                  "value": "2026-02-28",
+                  "description": "Optional: filter to date (YYYY-MM-DD)"
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Optional: defaults to 10"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Optional: defaults to 0"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Personal Expense",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/personal-expenses/:id",
+              "host": ["{{base_url}}"],
+              "path": ["personal-expenses", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "650e8400-e29b-41d4-a716-446655440000"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Personal Expense",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"95.00\",\n  \"description\": \"Weekly grocery shopping - updated\",\n  \"notes\": \"Added some household items\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/personal-expenses/:id",
+              "host": ["{{base_url}}"],
+              "path": ["personal-expenses", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "650e8400-e29b-41d4-a716-446655440000"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Personal Expense",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/personal-expenses/:id",
+              "host": ["{{base_url}}"],
+              "path": ["personal-expenses", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "650e8400-e29b-41d4-a716-446655440000"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Personal Finance - Dashboard",
+      "item": [
+        {
+          "name": "Get Monthly Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/dashboard/monthly?month=2&year=2026",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "monthly"],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "2",
+                  "description": "Optional: defaults to current month"
+                },
+                {
+                  "key": "year",
+                  "value": "2026",
+                  "description": "Optional: defaults to current year"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
